@@ -107,6 +107,40 @@ def _ensure_torch_loaded():
                 except Exception as e:
                     print(f"   ⚠ Could not add {Path(dll_dir).name}: {e}")
 
+        # METHOD 3: Pre-load torch's core DLLs with LOAD_WITH_ALTERED_SEARCH_PATH
+        print("   → Pre-loading torch core DLLs with ctypes...")
+        try:
+            import ctypes
+            import ctypes.util
+
+            # Find torch lib directory
+            torch_lib_dir = None
+            for path in sys.path:
+                potential_torch_lib = Path(path) / "torch" / "lib"
+                if potential_torch_lib.exists():
+                    torch_lib_dir = potential_torch_lib
+                    break
+
+            if torch_lib_dir:
+                # Try to pre-load core torch DLLs in dependency order
+                core_dlls = ['c10.dll', 'fbgemm.dll', 'asmjit.dll', 'torch_cpu.dll', 'torch.dll']
+                for dll_name in core_dlls:
+                    dll_path = torch_lib_dir / dll_name
+                    if dll_path.exists():
+                        try:
+                            # Use WinDLL with mode parameter for better compatibility
+                            # mode=0 means use default DLL search order with our modified PATH
+                            dll_handle = ctypes.CDLL(str(dll_path), winmode=0)
+                            print(f"   ✓ Pre-loaded: {dll_name}")
+                        except Exception as e:
+                            print(f"   ⚠ Could not pre-load {dll_name}: {e}")
+                            # If c10.dll fails, this is critical
+                            if dll_name == 'c10.dll':
+                                print(f"   ⚠ CRITICAL: c10.dll failed to pre-load!")
+                                print(f"   ⚠ This suggests a missing dependency for c10.dll itself")
+        except Exception as e:
+            print(f"   ⚠ Error during DLL pre-loading: {e}")
+
     # NOW import torch and cv2
     try:
         import torch as _torch_module
