@@ -1,10 +1,15 @@
-import torch
-import cv2
 import numpy as np
+from typing import TYPE_CHECKING
 
-# For basic type hints
-from torch import Tensor
-from numpy.typing import NDArray
+# CRITICAL: Do NOT import torch/cv2 at module level!
+# Type hints only - these imports don't happen at runtime
+if TYPE_CHECKING:
+    from torch import Tensor
+    from numpy.typing import NDArray
+else:
+    # At runtime, use Any for type hints
+    from typing import Any as Tensor
+    from typing import Any as NDArray
 
 def remove_infinities(data: Tensor | NDArray, inf_replacement_value = 0.0, in_place = True) -> Tensor | NDArray:
     
