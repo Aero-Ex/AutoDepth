@@ -178,14 +178,20 @@ class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
             )
 
             # Prepare the commands with proper quoting
+            # Use PyTorch 2.1.0 instead of latest - known stable version on Windows
+            if device == "cpu":
+                torch_install_cmd = f'"{python_exe}" -m pip install --no-cache-dir torch==2.1.0+cpu torchvision==0.16.0+cpu --index-url https://download.pytorch.org/whl/cpu'
+            else:
+                torch_install_cmd = f'"{python_exe}" -m pip install --no-cache-dir torch==2.1.0+cu118 torchvision==0.16.0+cu118 --index-url https://download.pytorch.org/whl/cu118'
+
             commands = [
                 f'"{sys.executable}" -m venv "{venv_path}"',
                 "echo Activating virtual environment...",
                 activate_cmd,
-                "echo Installing light-the-torch...",
+                "echo Installing PyTorch 2.1.0 (stable, tested version)...",
                 "echo      ",
-                f'"{python_exe}" -m pip install light-the-torch',
-                f'"{python_exe}" -m light_the_torch install {"--cpuonly " if device=="cpu" else ""}--no-cache-dir torch torchvision opencv-python',
+                torch_install_cmd,
+                f'"{python_exe}" -m pip install --no-cache-dir opencv-python',
                 marker_creation_command,
                 create_ascii_art(installation_fin),
             ]
