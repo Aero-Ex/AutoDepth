@@ -11,44 +11,54 @@ from .ascii_strings import depth_anything, installation_fin
 
 
 def draw(layout, depthgenius):
-    """Draw the installation UI"""
+    """Draw the installation UI - checks dependencies when UI is shown"""
     col = layout.row()
     col.active = not depthgenius.installation_in_progress
     col.enabled = not depthgenius.installation_in_progress
     col.prop(depthgenius, "device", expand=True)
 
-    status = register(depthgenius.device)
+    # Check if dependencies exist (file-based check, no imports!)
+    deps_installed = check_dependencies_installed(depthgenius.device)
 
-    if status == 'SUCCESS':
+    if deps_installed:
         row = layout.row()
-        row.label(text="Dependencies are installed, nothing to do here!")
-        return True
-    elif status == 'ERR:CUDA':
-        target = get_install_folder(f"venv_depthanything_gpu")
-        if depthgenius.device == 'gpu' and target.exists() and target.is_dir():
-            box = layout.box()
-            box.label(text="Blender restart required for changes to take effect.")
-            box.label(text="Currently using cpu")
-            return False
-        else:
-            box = layout.box()
-            labels = box.column()
-            labels.label(text="Dependencies need to be installed,")
-            labels.label(text="please press the button:")
+        row.label(text="Dependencies are installed!", icon='CHECKMARK')
 
-            operators = box.column()
-            operators.scale_y = 2.0
-            operators.operator("depthgenius.install_dependencies")
-            return False
+        # Test button to verify they work
+        test_row = layout.row()
+        test_row.operator("depthgenius.test_dependencies", text="Test Dependencies")
+        return True
     else:
         box = layout.box()
         labels = box.column()
-        labels.label(text="Dependencies need to be installed,")
-        labels.label(text="please press the button:")
+        labels.label(text="Dependencies need to be installed", icon='ERROR')
+        labels.label(text="Click below to install PyTorch + OpenCV")
+
+        if sys.platform == 'win32':
+            labels.label(text="⚠ Windows: Requires Visual C++ Redistributable", icon='INFO')
 
         operators = box.column()
         operators.scale_y = 2.0
         operators.operator("depthgenius.install_dependencies")
+        return False
+
+
+def check_dependencies_installed(device='cpu'):
+    """Check if dependency folder exists (no imports!)"""
+    try:
+        target = get_install_folder(f"venv_depthanything_{device}")
+
+        if sys.platform == "win32":
+            site_packages = target / "Lib" / "site-packages"
+        else:
+            site_packages = target / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+
+        # Check if torch directory exists
+        torch_dir = site_packages / "torch"
+        cv2_dir = site_packages / "cv2"
+
+        return torch_dir.exists() and cv2_dir.exists()
+    except:
         return False
 
 
@@ -79,6 +89,52 @@ def create_ascii_art(art_string):
         lines.append(end_delimiter)
 
     return "\n".join(lines)
+
+
+class DEPTHGENIUS_OT_TestDependencies(bpy.types.Operator):
+    """Test if dependencies work correctly"""
+    bl_idname = "depthgenius.test_dependencies"
+    bl_label = "Test Dependencies"
+    bl_description = "Test if PyTorch and OpenCV can be imported"
+
+    def execute(self, context):
+        device = context.scene.depthgenius.device
+
+        # Add DLL directory for Windows
+        if sys.platform == "win32":
+            try:
+                add_dll_directory(device)
+            except Exception as e:
+                self.report({'WARNING'}, f"Could not add DLL directory: {e}")
+
+        # Try to import
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                import torch
+                import cv2
+
+                if device == 'gpu':
+                    cuda_available = torch.cuda.is_available()
+                    if cuda_available:
+                        self.report({'INFO'}, f"✓ Dependencies OK! PyTorch {torch.__version__}, CUDA available")
+                    else:
+                        self.report({'WARNING'}, "PyTorch installed but CUDA not available. Using CPU instead.")
+                else:
+                    self.report({'INFO'}, f"✓ Dependencies OK! PyTorch {torch.__version__} (CPU), OpenCV {cv2.__version__}")
+
+                del torch
+                del cv2
+                return {'FINISHED'}
+
+        except ImportError as e:
+            self.report({'ERROR'}, f"Import Error: {str(e)}")
+            return {'CANCELLED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Error: {str(e)}")
+            if "DLL" in str(e) and sys.platform == 'win32':
+                self.report({'ERROR'}, "Install Visual C++ Redistributable: https://aka.ms/vs/17/release/vc_redist.x64.exe")
+            return {'CANCELLED'}
 
 
 class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
@@ -142,6 +198,7 @@ class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
                     "@echo off",
                     "echo Initializing Virtual Environment for installing dependencies...",
                     *commands,
+                    "pause",
                     "exit",
                 ])
             else:  # macOS and Linux
@@ -150,6 +207,7 @@ class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
                     "#!/bin/bash",
                     "echo Initializing Virtual Environment for installing dependencies...",
                     *commands,
+                    "read -p 'Press Enter to close...'",
                     "exit",
                 ])
 
@@ -185,7 +243,7 @@ class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
             self._timer = context.window_manager.event_timer_add(0.5, window=context.window)
             context.window_manager.modal_handler_add(self)
 
-            self.report({'INFO'}, "Installation process started. Please wait...")
+            self.report({'INFO'}, "Installation process started in new terminal window...")
             return {'RUNNING_MODAL'}
 
         except Exception as e:
@@ -207,7 +265,7 @@ class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
             installation_complete_marker = dependencies_dir / f"installation_complete_{device}.txt"
 
             if installation_complete_marker.exists():
-                self.report({'INFO'}, "Installation completed successfully.")
+                self.report({'INFO'}, "Installation completed successfully! Restart Blender to use the addon.")
                 self.add_venv_to_path(context)
                 context.window_manager.event_timer_remove(self._timer)
                 context.scene.depthgenius.installation_in_progress = False
@@ -224,27 +282,8 @@ class DEPTHGENIUS_OT_InstallDependencies(bpy.types.Operator):
     def add_venv_to_path(self, context):
         """Add the virtual environment to sys.path"""
         device = context.scene.depthgenius.device
-        dependencies_dir = Path(
-            bpy.context.preferences.addons[__package__].preferences.dependencies_path
-        )
-        venv_path = dependencies_dir / f"venv_depthanything_{device}"
-
-        if sys.platform == "win32":
-            site_packages = venv_path / "Lib" / "site-packages"
-        else:  # macOS and Linux
-            site_packages = venv_path / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-
-        if site_packages.exists():
-            if str(site_packages) not in sys.path:
-                sys.path.append(str(site_packages))
-                print(f"TrueDepth: Added {site_packages} to sys.path")
-                self.report({'INFO'}, f"Added {site_packages} to sys.path")
-            else:
-                print(f"TrueDepth: {site_packages} is already in sys.path")
-                self.report({'INFO'}, f"{site_packages} is already in sys.path")
-        else:
-            print(f"TrueDepth: Could not find site-packages at {site_packages}")
-            self.report({'WARNING'}, f"Could not find {site_packages}")
+        ensure_package_path(device)
+        self.report({'INFO'}, "Dependencies installed! Please restart Blender.")
 
     def cancel(self, context):
         """Cancel the installation process"""
@@ -263,8 +302,28 @@ def get_install_folder(internal_folder):
     ) / internal_folder
 
 
+def add_dll_directory(device='cpu'):
+    """Add DLL directories for Windows to help load torch DLLs"""
+    if sys.platform != "win32":
+        return
+
+    try:
+        target = get_install_folder(f"venv_depthanything_{device}")
+
+        # Add torch lib directory
+        torch_lib = target / "Lib" / "site-packages" / "torch" / "lib"
+        if torch_lib.exists() and hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(str(torch_lib))
+                print(f"TrueDepth: Added DLL directory: {torch_lib}")
+            except Exception as e:
+                print(f"TrueDepth: Could not add DLL directory: {e}")
+    except Exception as e:
+        print(f"TrueDepth: Error in add_dll_directory: {e}")
+
+
 def ensure_package_path(device='cpu', target=None):
-    """Ensure the package path is in sys.path"""
+    """Ensure the package path is in sys.path - DOES NOT IMPORT ANYTHING"""
     gpu_dependencies_exists = False
     target_provided = target is not None
     target = Path(str(target)) if target else None
@@ -299,49 +358,19 @@ def ensure_package_path(device='cpu', target=None):
         if str(site_packages) not in sys.path:
             print(f'TrueDepth: Adding deps path to sys.path: {site_packages}')
             sys.path.append(str(site_packages))
+
+        # On Windows, add DLL directory
+        if sys.platform == "win32":
+            add_dll_directory(device)
     else:
         print(f"TrueDepth: Could not find site-packages at {site_packages}")
 
 
-def test_packages(device='cpu'):
-    """Test if required packages are installed and working"""
-    try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
-            import torch
-            import cv2
-
-            if device == 'gpu':
-                cuda = torch.cuda.is_available()
-                if not cuda:
-                    return False, "ERR:CUDA"
-
-            del torch
-            del cv2
-
-    except ImportError as e:
-        print('TrueDepth: An ImportError occurred when importing the dependencies')
-        print(str(e))
-        return False, "ERR:IMPORT"
-    except Exception as e:
-        print('TrueDepth: Something went wrong importing the dependencies')
-        print(str(e))
-        return False, "ERR:GENERAL"
-    else:
-        return True, "SUCCESS"
-
-
 def register(device='cpu'):
-    """Register and test packages"""
+    """Register - only adds to sys.path, does NOT test imports"""
     ensure_package_path(device)
-    result, status = test_packages(device)
-
-    if result:
-        return status
-    else:
-        if status != "SUCCESS":
-            print("TrueDepth: Some dependencies are not installed. Please install them using the button in the addon preferences.")
-        return status
+    # Return success without testing - testing happens when user clicks test button
+    return "READY"
 
 
 def unregister(device='cpu'):
