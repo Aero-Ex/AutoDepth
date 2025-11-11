@@ -2,7 +2,6 @@ import subprocess
 import sys
 import bpy
 from pathlib import Path
-import numpy as np
 
 # Global variables
 CHECKPOINTS_DIR = "checkpoints"
@@ -61,6 +60,28 @@ class DEPTHGENIUS_OT_GenerateDepthMap(bpy.types.Operator):
                 context.window.cursor_set('DEFAULT')
                 return {'CANCELLED'}
 
+            # Add DLL directory for Windows BEFORE importing torch
+            if sys.platform == "win32":
+                from . import install_packages
+                try:
+                    install_packages.add_dll_directory(depthgenius.device)
+                except Exception as e:
+                    print(f"TrueDepth: Could not add DLL directory: {e}")
+
+            # NOW import depth_estimation (which will import torch/cv2)
+            print("TrueDepth: Importing depth_estimation module...")
+            try:
+                from . import depth_estimation
+            except Exception as e:
+                error_msg = f"Failed to import dependencies: {str(e)}"
+                if "DLL" in str(e) and sys.platform == 'win32':
+                    error_msg += "\n\nPlease install Visual C++ Redistributable:\nhttps://aka.ms/vs/17/release/vc_redist.x64.exe"
+                self.report({'ERROR'}, error_msg)
+                context.window.cursor_set('DEFAULT')
+                return {'CANCELLED'}
+
+            print("TrueDepth: Dependencies imported successfully!")
+
             # Prepare image
             image = depthgenius.image
             width, height = image.size
@@ -84,10 +105,8 @@ class DEPTHGENIUS_OT_GenerateDepthMap(bpy.types.Operator):
             else:
                 output_path = None
 
-            # Import depth_estimation module
-            from . import depth_estimation
-
             # Generate depth map
+            print("TrueDepth: Generating depth map...")
             depth_map = depth_estimation.main(
                 depthgenius.model_size,
                 str(checkpoint_path),
@@ -140,7 +159,10 @@ class DEPTHGENIUS_OT_GenerateDepthMap(bpy.types.Operator):
             import traceback
             print("TrueDepth: Error generating depth map:")
             print(traceback.format_exc())
-            self.report({'ERROR'}, f"Failed to generate depth map: {str(e)}")
+            error_msg = f"Failed to generate depth map: {str(e)}"
+            if "DLL" in str(e) and sys.platform == 'win32':
+                error_msg += "\n\nDLL Error - Please install Visual C++ Redistributable:\nhttps://aka.ms/vs/17/release/vc_redist.x64.exe"
+            self.report({'ERROR'}, error_msg)
         finally:
             context.window.cursor_set('DEFAULT')
 
