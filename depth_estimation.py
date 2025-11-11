@@ -70,6 +70,22 @@ def _ensure_torch_loaded():
         except:
             pass
 
+        # CRITICAL FIX: Pre-load python311.dll before torch tries to load it
+        print("   → Pre-loading python311.dll...")
+        try:
+            import ctypes
+            blender_python_dir = Path(sys.executable).parent
+            python_dll = blender_python_dir / "python311.dll"
+
+            if python_dll.exists():
+                # Load it into memory first
+                python_handle = ctypes.CDLL(str(python_dll))
+                print(f"   ✓ Pre-loaded python311.dll from: {blender_python_dir}")
+            else:
+                print(f"   ⚠ python311.dll not found at: {python_dll}")
+        except Exception as e:
+            print(f"   ⚠ Could not pre-load python311.dll: {e}")
+
         # METHOD 1: Add to PATH (works more reliably than add_dll_directory sometimes)
         if dll_dirs:
             print("   → Adding directories to PATH environment variable...")
