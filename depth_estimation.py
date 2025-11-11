@@ -8,22 +8,90 @@ import argparse
 import tempfile
 import time
 import bpy
-# addon_dir = Path(bpy.path.abspath(__file__)).parent.resolve()
-# venv_name = "venv_depthanything_cpu"
-# venv_paths = [str(addon_dir / venv_name / "Lib"), str(addon_dir / venv_name / "Lib" / "site-packages")]
-
-# dll_dir = str(Path(bpy.path.abspath(sys.executable)).parent.parent)
-# print("::==>", dll_dir)
-# os.add_dll_directory(dll_dir)
-# for p in venv_paths:
-#     sys.path.append(p)
-
-import cv2
-import torch
 import numpy as np
+
+# CRITICAL: Do NOT import torch/cv2 at module level!
+# They must be imported AFTER setting up DLL directories on Windows
+# See _ensure_torch_loaded() function below
 
 from . plane_fit import estimate_plane_of_best_fit
 from . utils import normalize_01, remove_infinities
+
+# Global flags to track if we've set up DLLs and loaded torch
+_torch_loaded = False
+_cv2 = None
+_torch = None
+
+
+def _ensure_torch_loaded():
+    """
+    Lazy-load torch and cv2 with proper DLL setup for Windows.
+    This MUST be called before any function that uses torch/cv2.
+    """
+    global _torch_loaded, _cv2, _torch
+
+    if _torch_loaded:
+        return _torch, _cv2
+
+    print("TrueDepth: Loading PyTorch and OpenCV...")
+
+    # On Windows, we need to add DLL directories BEFORE importing torch
+    if sys.platform == "win32" and hasattr(os, 'add_dll_directory'):
+        print("TrueDepth: Setting up DLL directories for Windows...")
+
+        # 1. Add Blender's Python DLL directory
+        try:
+            blender_python_dir = Path(sys.executable).parent
+            os.add_dll_directory(str(blender_python_dir))
+            print(f"   ✓ Added Blender Python dir: {blender_python_dir}")
+        except Exception as e:
+            print(f"   ⚠ Could not add Blender Python dir: {e}")
+
+        # 2. Add Blender's parent directory (contains more DLLs)
+        try:
+            blender_parent = Path(sys.executable).parent.parent
+            if blender_parent.exists():
+                os.add_dll_directory(str(blender_parent))
+                print(f"   ✓ Added Blender parent dir: {blender_parent}")
+        except Exception as e:
+            print(f"   ⚠ Could not add Blender parent dir: {e}")
+
+        # 3. Add torch's lib directory
+        try:
+            for path in sys.path:
+                torch_lib = Path(path) / "torch" / "lib"
+                if torch_lib.exists():
+                    os.add_dll_directory(str(torch_lib))
+                    print(f"   ✓ Added torch lib dir: {torch_lib}")
+                    break
+        except Exception as e:
+            print(f"   ⚠ Could not add torch lib dir: {e}")
+
+    # NOW import torch and cv2
+    try:
+        import torch as _torch_module
+        import cv2 as _cv2_module
+
+        _torch = _torch_module
+        _cv2 = _cv2_module
+        _torch_loaded = True
+
+        print(f"TrueDepth: ✓ Successfully loaded PyTorch {_torch.__version__}")
+        print(f"TrueDepth: ✓ Successfully loaded OpenCV {_cv2.__version__}")
+
+        return _torch, _cv2
+
+    except Exception as e:
+        print(f"TrueDepth: ✗ FAILED to load dependencies: {e}")
+        if "DLL" in str(e) and sys.platform == "win32":
+            print("\n" + "="*60)
+            print("WINDOWS DLL ERROR - POSSIBLE SOLUTIONS:")
+            print("1. Install Visual C++ Redistributable:")
+            print("   https://aka.ms/vs/17/release/vc_redist.x64.exe")
+            print("2. Delete and reinstall dependencies in the addon")
+            print("3. Make sure no antivirus is blocking DLL loading")
+            print("="*60 + "\n")
+        raise
 
 model = None
 def time_function(func):
@@ -63,6 +131,8 @@ def model_cache_decorator(func):
 @time_function
 @model_cache_decorator
 def load_model(encoder, checkpoint_path, preferred_device):
+    torch, _ = _ensure_torch_loaded()  # Load torch first!
+
     if preferred_device == 'gpu':
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     else:
@@ -85,16 +155,17 @@ def load_model(encoder, checkpoint_path, preferred_device):
 def infer_depth(model, image):
     return model.infer_image(image, input_size= 512)
 
-colormaps={
-    'HOT':cv2.COLORMAP_HOT,
-    'COOL':cv2.COLORMAP_COOL,
-    'OCEAN':cv2.COLORMAP_OCEAN,
-    'SUMMER':cv2.COLORMAP_SUMMER,
-    'SPRING':cv2.COLORMAP_SPRING,
-    'INFERNO':cv2.COLORMAP_INFERNO,
-    'PLASMA':cv2.COLORMAP_PLASMA,
-    'VIRIDIS':cv2.COLORMAP_VIRIDIS,
-    'TWILIGHT':cv2.COLORMAP_TWILIGHT,
+# Colormap constants - these will be looked up from cv2 when needed
+COLORMAP_NAMES = {
+    'HOT': 'COLORMAP_HOT',
+    'COOL': 'COLORMAP_COOL',
+    'OCEAN': 'COLORMAP_OCEAN',
+    'SUMMER': 'COLORMAP_SUMMER',
+    'SPRING': 'COLORMAP_SPRING',
+    'INFERNO': 'COLORMAP_INFERNO',
+    'PLASMA': 'COLORMAP_PLASMA',
+    'VIRIDIS': 'COLORMAP_VIRIDIS',
+    'TWILIGHT': 'COLORMAP_TWILIGHT',
 }
 
 @time_function
@@ -111,6 +182,8 @@ def post_process_and_save(
     Converts a masked depth map to 8- or 16-bit (gray or colour-mapped),
     optionally merges alpha, writes a PNG, and returns the BGR(A) buffer.
     """
+    _, cv2 = _ensure_torch_loaded()  # Load cv2 first!
+
     depth = remove_infinities(depth)
     depth = normalize_01(depth)
     depth = depth - (plane_removal_factor * estimate_plane_of_best_fit(depth))
@@ -119,8 +192,9 @@ def post_process_and_save(
 
     # ── colourise / quantise ────────────────────────────────────────────────
     if use_colormap:                                                    # RGB heat-map
+        colormap_value = getattr(cv2, COLORMAP_NAMES[colormap])
         depth_bgr = cv2.applyColorMap((depth * 255).astype(np.uint8),
-                                    colormaps[colormap])
+                                    colormap_value)
         if save_16bit:                                                    # upscale 8-bit → 16-bit
             depth_bgr = (depth_bgr.astype(np.uint16) * 257)
     else:                                                               # plain grayscale
@@ -135,7 +209,7 @@ def post_process_and_save(
         scale  = 65535 if save_16bit else 255
         a_chan = (a_rs * scale).round().astype(np.uint16 if save_16bit else np.uint8)
         depth_bgr = cv2.merge((*cv2.split(depth_bgr), a_chan))
-    
+
     # ── save PNG: convert BGR(A) → RGB(A) first ────────────────────────────
     if output_path and output_path != '':
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +232,8 @@ def get_raw_img(input_image: bpy.types.Image,
     raw_img      np.ndarray  uint8, shape (H, W, 3), BGR 0-255
     alpha_mask   np.ndarray  float32, shape (H, W),     0-1   (1 = opaque)
     """
+    _, cv2 = _ensure_torch_loaded()  # Load cv2 first!
+
     H, W = input_image.size[1], input_image.size[0]
 
     from_file = (
@@ -232,6 +308,8 @@ def main(model_size: str,
     preferred_device : {"cpu","gpu"}
         "gpu" selects CUDA → Metal → CPU in that order.
     """
+    torch, cv2 = _ensure_torch_loaded()  # Load dependencies first!
+
     # Load model
     if preferred_device == 'gpu':
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
@@ -285,6 +363,8 @@ def main(model_size: str,
     return depth_vis
 
 def cv2_to_blender_image(cv2_image, new_image, ):
+    _, cv2 = _ensure_torch_loaded()  # Load cv2 first!
+
     if cv2_image.shape[2] == 4:
         cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGRA2RGBA)
     else:
