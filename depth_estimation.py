@@ -22,6 +22,9 @@ _torch_loaded = False
 _cv2 = None
 _torch = None
 
+# Diagnostic: Confirm module imported successfully
+print("TrueDepth: ✓ depth_estimation module imported successfully (torch/cv2 not loaded yet)")
+
 
 def _ensure_torch_loaded():
     """
