@@ -16,7 +16,7 @@ bl_info = {
     "author": "Pavan, Lewis",
     "description": "Generate depthmap in seconds using AI",
     "blender": (2, 80, 0),
-    "version": (1, 5, 4),
+    "version": (1, 6, 0),
     "location": "View3D > Sidebar > TrueDepth",
     "warning": "",
     "category": "3D View",
@@ -71,9 +71,16 @@ def save_settings(settings_filepath: Path, settings: dict):
 DEFAULT_SETTINGS.update(load_settings(settings_filepath))
 print(f"TrueDepth: Using device: {DEFAULT_SETTINGS['device']}")
 
-# Import install_packages to ensure dependencies are in path
+# Import addon modules (these should not import torch/cv2 at module level!)
 from . import install_packages
+from . import preferences
+from . import operators
+from . import image_plane
+from . import ui
+from . import generate_depthmap_video
+from . import generate_depthmap_batch
 
+# CRITICAL: Only add paths to sys.path, DO NOT import torch/cv2 during registration!
 try:
     install_packages.ensure_package_path(
         DEFAULT_SETTINGS['device'],
@@ -83,14 +90,6 @@ except Exception as e:
     import traceback
     print(f"TrueDepth: Error ensuring package path:")
     print(traceback.format_exc())
-
-# Import addon modules
-from . import preferences
-from . import operators
-from . import image_plane
-from . import ui
-from . import generate_depthmap_video
-from . import generate_depthmap_batch
 
 
 def validate_save_location(self, context):
@@ -290,6 +289,7 @@ class DepthGeniusProperties(bpy.types.PropertyGroup):
 # Classes to register
 classes = (
     preferences.DEPTHGENIUS_Preferences,
+    install_packages.DEPTHGENIUS_OT_TestDependencies,
     install_packages.DEPTHGENIUS_OT_InstallDependencies,
     DEPTHGENIUS_PG_progress,
     DepthGeniusProperties,
@@ -326,6 +326,7 @@ def register():
     bpy.types.Scene.depthgenius = bpy.props.PointerProperty(type=DepthGeniusProperties)
 
     print("TrueDepth: Registration complete")
+    print("TrueDepth: Dependencies will be loaded when you run operations (not during startup)")
 
 
 def unregister():
