@@ -35,37 +35,58 @@ def _ensure_torch_loaded():
 
     print("TrueDepth: Loading PyTorch and OpenCV...")
 
-    # On Windows, we need to add DLL directories BEFORE importing torch
-    if sys.platform == "win32" and hasattr(os, 'add_dll_directory'):
+    # On Windows, we need to setup DLL paths BEFORE importing torch
+    if sys.platform == "win32":
         print("TrueDepth: Setting up DLL directories for Windows...")
 
-        # 1. Add Blender's Python DLL directory
+        dll_dirs = []
+
+        # 1. Blender's main directory (contains blender.exe and VCRUNTIME DLLs)
+        try:
+            # sys.executable: C:\...\blender-4.5.4\4.5\python\bin\python.exe
+            blender_exe_dir = Path(sys.executable).parent.parent.parent.parent
+            if blender_exe_dir.exists() and (blender_exe_dir / "blender.exe").exists():
+                dll_dirs.append(str(blender_exe_dir))
+                print(f"   ✓ Found Blender exe dir: {blender_exe_dir}")
+        except:
+            pass
+
+        # 2. Blender's Python bin directory
         try:
             blender_python_dir = Path(sys.executable).parent
-            os.add_dll_directory(str(blender_python_dir))
-            print(f"   ✓ Added Blender Python dir: {blender_python_dir}")
-        except Exception as e:
-            print(f"   ⚠ Could not add Blender Python dir: {e}")
+            dll_dirs.append(str(blender_python_dir))
+            print(f"   ✓ Found Blender Python dir: {blender_python_dir}")
+        except:
+            pass
 
-        # 2. Add Blender's parent directory (contains more DLLs)
-        try:
-            blender_parent = Path(sys.executable).parent.parent
-            if blender_parent.exists():
-                os.add_dll_directory(str(blender_parent))
-                print(f"   ✓ Added Blender parent dir: {blender_parent}")
-        except Exception as e:
-            print(f"   ⚠ Could not add Blender parent dir: {e}")
-
-        # 3. Add torch's lib directory
+        # 3. Torch lib directory
         try:
             for path in sys.path:
                 torch_lib = Path(path) / "torch" / "lib"
                 if torch_lib.exists():
-                    os.add_dll_directory(str(torch_lib))
-                    print(f"   ✓ Added torch lib dir: {torch_lib}")
+                    dll_dirs.append(str(torch_lib))
+                    print(f"   ✓ Found torch lib dir: {torch_lib}")
                     break
-        except Exception as e:
-            print(f"   ⚠ Could not add torch lib dir: {e}")
+        except:
+            pass
+
+        # METHOD 1: Add to PATH (works more reliably than add_dll_directory sometimes)
+        if dll_dirs:
+            print("   → Adding directories to PATH environment variable...")
+            current_path = os.environ.get('PATH', '')
+            new_path = os.pathsep.join(dll_dirs) + os.pathsep + current_path
+            os.environ['PATH'] = new_path
+            print(f"   ✓ Updated PATH with {len(dll_dirs)} directories")
+
+        # METHOD 2: Also use add_dll_directory (for Python 3.8+)
+        if hasattr(os, 'add_dll_directory'):
+            print("   → Also using os.add_dll_directory()...")
+            for dll_dir in dll_dirs:
+                try:
+                    os.add_dll_directory(dll_dir)
+                    print(f"   ✓ Added via add_dll_directory: {Path(dll_dir).name}")
+                except Exception as e:
+                    print(f"   ⚠ Could not add {Path(dll_dir).name}: {e}")
 
     # NOW import torch and cv2
     try:
@@ -83,14 +104,27 @@ def _ensure_torch_loaded():
 
     except Exception as e:
         print(f"TrueDepth: ✗ FAILED to load dependencies: {e}")
-        if "DLL" in str(e) and sys.platform == "win32":
-            print("\n" + "="*60)
-            print("WINDOWS DLL ERROR - POSSIBLE SOLUTIONS:")
-            print("1. Install Visual C++ Redistributable:")
+
+        if "DLL" in str(e) or "1114" in str(e):
+            print("\n" + "="*70)
+            print("WINDOWS DLL LOADING ERROR - THIS IS ALMOST CERTAINLY:")
+            print("")
+            print(">>> MISSING VISUAL C++ REDISTRIBUTABLE <<<")
+            print("")
+            print("SOLUTION:")
+            print("1. Download and install from Microsoft:")
             print("   https://aka.ms/vs/17/release/vc_redist.x64.exe")
-            print("2. Delete and reinstall dependencies in the addon")
-            print("3. Make sure no antivirus is blocking DLL loading")
-            print("="*60 + "\n")
+            print("")
+            print("2. After installing, RESTART BLENDER")
+            print("")
+            print("3. If that doesn't work, delete this folder and reinstall:")
+            print(f"   {Path(sys.path[0]).parent / 'TrueDepth-blender-addon'}")
+            print("")
+            print("WHY THIS HAPPENS:")
+            print("PyTorch's C++ DLLs (c10.dll, torch.dll) need the Microsoft")
+            print("Visual C++ Runtime to work. Even if the DLLs are found, they")
+            print("can't initialize without the correct runtime installed.")
+            print("="*70 + "\n")
         raise
 
 model = None
