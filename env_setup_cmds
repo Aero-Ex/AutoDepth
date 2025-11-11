@@ -1,0 +1,17 @@
+# forGPU
+python -m venv depthanything
+depthanything\Scripts\activate
+
+pip install light-the-torch
+python -m light_the_torch install --no-cache-dir torch torchvision
+pip install opencv-python
+python test.py
+
+# forCPU
+python -m venv depthanything_cpu
+depthanything_cpu\Scripts\activate
+
+pip install light-the-torch
+python -m light_the_torch install --cpuonly --no-cache-dir torch torchvision opencv-python
+pip install opencv-python
+python test.py
