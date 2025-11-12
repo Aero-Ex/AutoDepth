@@ -86,15 +86,12 @@ Generate high-quality depth maps from images using AI (Depth Anything V2 model) 
 
 1. **Open Blender** and create a new scene or open an existing one
 
-2. **Load an Image**:
-   - Go to **Shader Editor** workspace
-   - Add an **Image Texture** node or use an existing image
-
 3. **Generate Depth Map**:
    - In the **3D Viewport**, press `N` to open the sidebar
    - Navigate to the **TrueDepth** tab
    - Configure settings:
      - **Model**: Choose model size (small/base/large)
+     - **choose**: choose the preffered image
      - **Output Path**: Where depth maps will be saved
    - Click **"Generate Depth Map"**
 
