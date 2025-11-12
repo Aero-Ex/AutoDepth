@@ -203,20 +203,34 @@ def time_function(func):
 # Global variables to maintain state
 _model = None
 _current_device = None
+_current_model_size = None
 
 def model_cache_decorator(func):
     @wraps(func)
     def wrapper(model_size, checkpoint_path, preferred_device, enable_cpu_offload=True):
-        global _model, _current_device
+        global _model, _current_device, _current_model_size
+
+        # Check if we need to reload the model
+        needs_reload = (
+            _model is None or
+            preferred_device != _current_device or
+            model_size != _current_model_size
+        )
 
         if _model is None:
             print(f"Initializing model ({model_size})...")
             _model = func(model_size, checkpoint_path, preferred_device, enable_cpu_offload)
             _current_device = preferred_device
-        elif preferred_device != _current_device:
-            print(f"Reloading model ({model_size}) for device: {preferred_device}")
+            _current_model_size = model_size
+        elif needs_reload:
+            if preferred_device != _current_device:
+                print(f"Reloading model ({model_size}) for device: {preferred_device}")
+            elif model_size != _current_model_size:
+                print(f"Switching model from {_current_model_size} to {model_size}...")
+
             _model = func(model_size, checkpoint_path, preferred_device, enable_cpu_offload)
             _current_device = preferred_device
+            _current_model_size = model_size
         else:
             print(f"Using cached model ({model_size})")
 
