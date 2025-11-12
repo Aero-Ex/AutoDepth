@@ -232,3 +232,41 @@ class DEPTHGENIUS_OT_open_checkpoint_folder(bpy.types.Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Failed to open folder: {str(e)}")
             return {'CANCELLED'}
+
+
+class DEPTHGENIUS_OT_ClearModelCache(bpy.types.Operator):
+    """Clear the cached depth model to free GPU memory"""
+    bl_idname = "depthgenius.clear_model_cache"
+    bl_label = "Clear Model Cache"
+    bl_description = "Clear the cached model from memory. Next depth map generation will reload the model"
+
+    def execute(self, context):
+        try:
+            # Import depth_estimation to access cache variables
+            from . import depth_estimation
+
+            # Clear the global cache variables
+            depth_estimation._model = None
+            depth_estimation._current_device = None
+            depth_estimation._current_model_size = None
+
+            # Clear GPU cache if CUDA is available
+            try:
+                torch_loaded = depth_estimation._torch_loaded
+                if torch_loaded:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        self.report({'INFO'}, "Model cache cleared and GPU memory freed")
+                    else:
+                        self.report({'INFO'}, "Model cache cleared")
+                else:
+                    self.report({'INFO'}, "Model cache cleared")
+            except:
+                self.report({'INFO'}, "Model cache cleared")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to clear cache: {str(e)}")
+            return {'CANCELLED'}
