@@ -208,20 +208,20 @@ def model_cache_decorator(func):
     @wraps(func)
     def wrapper(model_size, checkpoint_path, preferred_device):
         global _model, _current_device
-        
+
         if _model is None:
-            print("Initializing model")
+            print(f"Initializing model ({model_size})...")
             _model = func(model_size, checkpoint_path, preferred_device)
             _current_device = preferred_device
         elif preferred_device != _current_device:
-            print("Rreloading model")
+            print(f"Reloading model ({model_size}) for device: {preferred_device}")
             _model = func(model_size, checkpoint_path, preferred_device)
             _current_device = preferred_device
         else:
-            print("Using cached model")
-        
+            print(f"Using cached model ({model_size})")
+
         return _model
-    
+
     return wrapper
 
 
@@ -234,12 +234,27 @@ def load_model(encoder, checkpoint_path, preferred_device):
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     else:
         DEVICE = 'cpu'
+
+    # Map encoder names to friendly names
+    model_names = {
+        'vits': 'Small (ViT-S)',
+        'vitb': 'Base (ViT-B)',
+        'vitl': 'Large (ViT-L)',
+        'vitg': 'Giant (ViT-G)'
+    }
+
     model_configs = {
         'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
         'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
         'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
         'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
+
+    print(f"Loading model: {model_names.get(encoder, encoder)}")
+    print(f"  Encoder: {encoder}")
+    print(f"  Device: {DEVICE}")
+    print(f"  Checkpoint: {Path(checkpoint_path).name}")
+
     from .depth_anything_v2 import dpt
     model = dpt.DepthAnythingV2(**model_configs[encoder], device = DEVICE)
     model.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=True))
