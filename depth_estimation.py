@@ -296,12 +296,15 @@ def load_model(encoder, checkpoint_path, preferred_device, enable_cpu_offload=Tr
         try:
             # Move model to CUDA but allow fallback to CPU for large operations
             model = model.to(DEVICE)
+            # CRITICAL: Update the model's device attribute after moving it
+            model.device = DEVICE
             torch.cuda.empty_cache()
             print(f"  ✓ CPU offloading configured (hybrid CPU/GPU mode)")
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
                 print(f"  ⚠ OOM during model loading - keeping model on CPU")
                 DEVICE = 'cpu'
+                model.device = 'cpu'
                 torch.cuda.empty_cache()
             else:
                 raise
