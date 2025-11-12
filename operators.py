@@ -9,7 +9,7 @@ MODEL_URLS = {
     "vits": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth",
     "vitb": "https://huggingface.co/depth-anything/Depth-Anything-V2-Base/resolve/main/depth_anything_v2_vitb.pth",
     "vitl": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth",
-    "vitg": "",
+    "vitg": "https://huggingface.co/likeabruh/depth_anything_v2_vitg/resolve/main/depth_anything_v2_vitg.pth",
 }
 
 
@@ -119,6 +119,7 @@ class DEPTHGENIUS_OT_GenerateDepthMap(bpy.types.Operator):
                 include_alpha=depthgenius.include_alpha,
                 save_16bit=True,
                 preferred_device=depthgenius.device,
+                enable_cpu_offload=depthgenius.enable_cpu_offload,
             )
 
             if output_path:

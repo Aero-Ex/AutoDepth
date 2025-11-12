@@ -17,6 +17,13 @@ def draw(layout, depthgenius):
     col.enabled = not depthgenius.installation_in_progress
     col.prop(depthgenius, "device", expand=True)
 
+    # Show CPU offload option for GPU mode
+    if depthgenius.device == 'gpu':
+        offload_row = layout.row()
+        offload_row.prop(depthgenius, "enable_cpu_offload", text="Enable CPU Offloading (prevents OOM)")
+        offload_row.active = not depthgenius.installation_in_progress
+        offload_row.enabled = not depthgenius.installation_in_progress
+
     # Check if dependencies exist (file-based check, no imports!)
     deps_installed = check_dependencies_installed(depthgenius.device)
 
