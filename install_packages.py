@@ -24,6 +24,12 @@ def draw(layout, depthgenius):
         offload_row.active = not depthgenius.installation_in_progress
         offload_row.enabled = not depthgenius.installation_in_progress
 
+        # Clear cache button for GPU mode
+        cache_row = layout.row()
+        cache_row.operator("depthgenius.clear_model_cache", text="Clear Model Cache", icon='TRASH')
+        cache_row.active = not depthgenius.installation_in_progress
+        cache_row.enabled = not depthgenius.installation_in_progress
+
     # Check if dependencies exist (file-based check, no imports!)
     deps_installed = check_dependencies_installed(depthgenius.device)
 

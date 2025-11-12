@@ -305,6 +305,7 @@ classes = (
     operators.DEPTHGENIUS_OT_open_image_in_new_window,
     image_plane.DEPTHGENIUS_OT_CreatePlane,
     operators.DEPTHGENIUS_OT_open_checkpoint_folder,
+    operators.DEPTHGENIUS_OT_ClearModelCache,
     ui.DEPTHGENIUS_PT_HoverInfo,
     ui.DEPTHGENIUS_PT_Panel,
     ui.DEPTHGENIUS_PT_Modifiers,
