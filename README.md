@@ -97,7 +97,7 @@ Generate high-quality depth maps from images using AI (Depth Anything V2 model) 
 
 4. **View Results**:
    - Depth maps are saved to your specified output path
-   - Import the depth map back into Blender to use as displacement, compositing, etc.
+   - Click on the Create Mesh button to generate the displaced mesh
 
 ### Batch Processing
 
