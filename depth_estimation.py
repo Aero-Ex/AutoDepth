@@ -506,18 +506,20 @@ def main(model_size: str,
     """
     torch, cv2 = _ensure_torch_loaded()  # Load dependencies first!
 
-    # Load model
+    # Determine device for display purposes
     if preferred_device == 'gpu':
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     else:
         DEVICE = 'cpu'
 
     print(DEVICE)
-    # print("CUDA: ", torch.backends.cuda.matmul.allow_tf32)
-    # print("CUDNN: ",torch.backends.cudnn.allow_tf32)
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    model = load_model(model_size, checkpoint_path, DEVICE, enable_cpu_offload)
+    # Enable TF32 for better performance on Ampere+ GPUs
+    if DEVICE == 'cuda':
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
+    # Load model - pass preferred_device ('gpu'/'cpu'), not DEVICE ('cuda'/'cpu')
+    model = load_model(model_size, checkpoint_path, preferred_device, enable_cpu_offload)
     if isinstance(input_image,bpy.types.Image):
         raw_img, alpha_mask = get_raw_img(input_image,use_dirty_image)
     else:
