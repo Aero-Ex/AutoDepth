@@ -128,7 +128,8 @@ For processing multiple images or animation sequences:
 **Model Size:**
 - **Small**: Fastest, good quality (~2GB VRAM)
 - **Base**: Balanced speed/quality (~3GB VRAM)
-- **Large**: Best quality, slower (~4GB VRAM)
+- **Large**: Better quality, slower (~4GB VRAM)
+- **Giant**: Best quality, slowest (~6GB VRAM)
 
 ## Troubleshooting
 
@@ -240,9 +241,11 @@ Tested on a typical system (Intel i7-10700, 16GB RAM):
 | CPU  | Small     | 1920x1080 | ~7s            | ~4GB RAM       |
 | CPU  | Base      | 1920x1080 | ~10s           | ~5GB RAM       |
 | CPU  | Large     | 1920x1080 | ~15s           | ~6GB RAM       |
+| CPU  | Giant     | 1920x1080 | ~25s           | ~8GB RAM       |
 | GPU  | Small     | 1920x1080 | ~0.8s          | ~2GB VRAM      |
 | GPU  | Base      | 1920x1080 | ~1.2s          | ~3GB VRAM      |
 | GPU  | Large     | 1920x1080 | ~2.5s          | ~4GB VRAM      |
+| GPU  | Giant     | 1920x1080 | ~4.0s          | ~6GB VRAM      |
 
 *Your results may vary based on hardware*
 

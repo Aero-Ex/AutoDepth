@@ -135,6 +135,7 @@ class DepthGeniusProperties(bpy.types.PropertyGroup):
             ('vits', "ViT-S : Small", "Small model (commercial use allowed)"),
             ('vitb', "ViT-B : Base", "Base model (non-commercial use only)"),
             ('vitl', "ViT-L : Large", "Large model (non-commercial use only)"),
+            ('vitg', "ViT-G : Giant", "Giant model - Best quality (non-commercial use only)"),
         ],
         default='vits',
         update=check_model_availability
