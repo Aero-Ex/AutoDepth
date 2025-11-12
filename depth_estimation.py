@@ -123,8 +123,18 @@ def _ensure_torch_loaded():
 
             if torch_lib_dir:
                 # Try to pre-load core torch DLLs in dependency order
-                core_dlls = ['c10.dll', 'fbgemm.dll', 'asmjit.dll', 'torch_cpu.dll', 'torch.dll']
-                for dll_name in core_dlls:
+                # CPU DLLs (always present)
+                core_dlls = ['c10.dll', 'fbgemm.dll', 'asmjit.dll', 'torch_cpu.dll']
+
+                # CUDA DLLs (only in GPU builds)
+                cuda_dlls = ['c10_cuda.dll', 'torch_cuda.dll', 'nvrtc64_112_0.dll',
+                             'cusparse64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
+                             'cudnn64_9.dll', 'cudnn_ops64_9.dll', 'cudnn_cnn64_9.dll']
+
+                # torch.dll must be last (depends on all others)
+                all_dlls = core_dlls + cuda_dlls + ['torch.dll']
+
+                for dll_name in all_dlls:
                     dll_path = torch_lib_dir / dll_name
                     if dll_path.exists():
                         try:
