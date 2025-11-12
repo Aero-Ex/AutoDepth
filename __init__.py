@@ -248,6 +248,12 @@ class DepthGeniusProperties(bpy.types.PropertyGroup):
         default=DEFAULT_SETTINGS['device']
     )
 
+    enable_cpu_offload: bpy.props.BoolProperty(
+        name="Enable CPU Offloading",
+        description="Automatically offload model to CPU if GPU memory is insufficient. Slower but prevents OOM errors. Recommended for GPUs with <8GB VRAM when using Large/Giant models",
+        default=True
+    )
+
     mode: bpy.props.EnumProperty(
         items=[
             ('IMAGE', 'Single Image', 'Depth Image generated from a single image'),

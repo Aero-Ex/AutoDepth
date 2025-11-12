@@ -119,6 +119,7 @@ class DEPTHGENIUS_OT_GenerateDepthMap(bpy.types.Operator):
                 include_alpha=depthgenius.include_alpha,
                 save_16bit=True,
                 preferred_device=depthgenius.device,
+                enable_cpu_offload=depthgenius.enable_cpu_offload,
             )
 
             if output_path:
