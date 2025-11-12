@@ -276,12 +276,13 @@ def load_model(encoder, checkpoint_path, preferred_device, enable_cpu_offload=Tr
         free_memory = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)) / (1024**3)
         print(f"  GPU Memory: {total_memory:.2f} GB total, {free_memory:.2f} GB free")
 
-        # Estimate memory requirements (approximate)
+        # Memory requirements based on actual testing
+        # Values include model weights + inference working memory
         memory_requirements = {
-            'vits': 2.0,  # ~2GB
-            'vitb': 3.0,  # ~3GB
-            'vitl': 4.5,  # ~4.5GB
-            'vitg': 6.5,  # ~6.5GB
+            'vits': 2.0,  # ~2GB (estimated)
+            'vitb': 3.0,  # ~3GB (estimated)
+            'vitl': 4.5,  # ~4.5GB (tested - works great)
+            'vitg': 7.5,  # ~5GB model + 2.5GB inference buffer (tested on RTX 4050)
         }
 
         required_memory = memory_requirements.get(encoder, 2.0)
