@@ -38,7 +38,7 @@ Generate high-quality depth maps from images using AI (Depth Anything V2 model) 
 
 ### Step 1: Download the Addon
 
-1. Download the addon as a ZIP file from the releases page
+1. Download the addon as a ZIP file
 2. **Do NOT extract the ZIP file** - Blender will handle this
 
 ### Step 2: Install in Blender
@@ -91,7 +91,7 @@ Generate high-quality depth maps from images using AI (Depth Anything V2 model) 
    - Navigate to the **TrueDepth** tab
    - Configure settings:
      - **Model**: Choose model size (small/base/large)
-     - **choose**: choose the preffered image
+     - **choose image**: choose the preffered image
      - **Output Path**: Where depth maps will be saved
    - Click **"Generate Depth Map"**
 
