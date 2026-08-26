@@ -187,9 +187,12 @@ class DepthAnythingV2(nn.Module):
     @torch.no_grad()
     def infer_image(self, raw_image, input_size=518):
         image, (h, w) = self.image2tensor(raw_image, input_size)
-        
+
+        # Move image to the same device as the model
+        image = image.to(self.device)
+
         depth = self.forward(image)
-        
+
         depth = F.interpolate(depth[:, None], (h, w), mode="bilinear", align_corners=True)[0, 0]
         del image
         return depth.cpu().numpy()

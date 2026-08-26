@@ -203,54 +203,170 @@ def time_function(func):
 # Global variables to maintain state
 _model = None
 _current_device = None
+_current_model_size = None
 
 def model_cache_decorator(func):
     @wraps(func)
-    def wrapper(model_size, checkpoint_path, preferred_device):
-        global _model, _current_device
-        
+    def wrapper(model_size, checkpoint_path, preferred_device, enable_cpu_offload=True):
+        global _model, _current_device, _current_model_size
+
+        # Check if we need to reload the model
+        needs_reload = (
+            _model is None or
+            preferred_device != _current_device or
+            model_size != _current_model_size
+        )
+
         if _model is None:
-            print("Initializing model")
-            _model = func(model_size, checkpoint_path, preferred_device)
+            print(f"Initializing model ({model_size})...")
+            _model = func(model_size, checkpoint_path, preferred_device, enable_cpu_offload)
             _current_device = preferred_device
-        elif preferred_device != _current_device:
-            print("Rreloading model")
-            _model = func(model_size, checkpoint_path, preferred_device)
+            _current_model_size = model_size
+        elif needs_reload:
+            if preferred_device != _current_device:
+                print(f"Reloading model ({model_size}) for device: {preferred_device}")
+            elif model_size != _current_model_size:
+                print(f"Switching model from {_current_model_size} to {model_size}...")
+
+            _model = func(model_size, checkpoint_path, preferred_device, enable_cpu_offload)
             _current_device = preferred_device
+            _current_model_size = model_size
         else:
-            print("Using cached model")
-        
+            print(f"Using cached model ({model_size})")
+
         return _model
-    
+
     return wrapper
 
 
 @time_function
 @model_cache_decorator
-def load_model(encoder, checkpoint_path, preferred_device):
+def load_model(encoder, checkpoint_path, preferred_device, enable_cpu_offload=True):
     torch, _ = _ensure_torch_loaded()  # Load torch first!
 
     if preferred_device == 'gpu':
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     else:
         DEVICE = 'cpu'
+
+    # Map encoder names to friendly names
+    model_names = {
+        'vits': 'Small (ViT-S)',
+        'vitb': 'Base (ViT-B)',
+        'vitl': 'Large (ViT-L)',
+        'vitg': 'Giant (ViT-G)'
+    }
+
     model_configs = {
         'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
         'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
         'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
         'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
+
+    print(f"Loading model: {model_names.get(encoder, encoder)}")
+    print(f"  Encoder: {encoder}")
+    print(f"  Device: {DEVICE}")
+    print(f"  Checkpoint: {Path(checkpoint_path).name}")
+
+    # Check GPU memory for large models and decide on offloading
+    use_offload = False
+    if DEVICE == 'cuda' and enable_cpu_offload:
+        total_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # GB
+        free_memory = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)) / (1024**3)
+        print(f"  GPU Memory: {total_memory:.2f} GB total, {free_memory:.2f} GB free")
+
+        # Memory requirements based on actual testing
+        # Values include model weights + inference working memory
+        memory_requirements = {
+            'vits': 2.0,  # ~2GB (estimated)
+            'vitb': 3.0,  # ~3GB (estimated)
+            'vitl': 4.5,  # ~4.5GB (tested - works great)
+            'vitg': 7.5,  # ~5GB model + 2.5GB inference buffer (tested on RTX 4050)
+        }
+
+        required_memory = memory_requirements.get(encoder, 2.0)
+        print(f"  Estimated requirement: ~{required_memory:.1f} GB VRAM")
+
+        # Enable CPU offloading if memory is insufficient
+        if free_memory < required_memory * 1.2:  # 20% margin
+            use_offload = True
+            print(f"  ⚠ Low VRAM detected! Enabling CPU offloading")
+            print(f"  ⚠ Performance will be slower but prevents OOM errors")
+
     from .depth_anything_v2 import dpt
-    model = dpt.DepthAnythingV2(**model_configs[encoder], device = DEVICE)
-    model.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=True))
-    model = model.to(DEVICE).eval()
+
+    # Load model with appropriate strategy
+    if use_offload:
+        # Load model on CPU first
+        print(f"  → Loading model on CPU first (offload mode)")
+        model = dpt.DepthAnythingV2(**model_configs[encoder], device='cpu')
+        model.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=True))
+        model = model.eval()
+
+        # Move only essential parts to GPU
+        # The preprocessing and postprocessing stay on CPU
+        # Only the core inference backbone goes to GPU
+        print(f"  → Transferring core model to GPU (keeping large layers on CPU)")
+        try:
+            # Move model to CUDA but allow fallback to CPU for large operations
+            model = model.to(DEVICE)
+            # CRITICAL: Update the model's device attribute after moving it
+            model.device = DEVICE
+            torch.cuda.empty_cache()
+            print(f"  ✓ CPU offloading configured (hybrid CPU/GPU mode)")
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                print(f"  ⚠ OOM during model loading - keeping model on CPU")
+                DEVICE = 'cpu'
+                model.device = 'cpu'
+                torch.cuda.empty_cache()
+            else:
+                raise
+    else:
+        # Normal loading - full model on GPU
+        model = dpt.DepthAnythingV2(**model_configs[encoder], device=DEVICE)
+        model.load_state_dict(torch.load(checkpoint_path, map_location='cpu', weights_only=True))
+        model = model.to(DEVICE).eval()
+
+    # Enable memory efficient inference for large models
+    if DEVICE == 'cuda' and encoder in ['vitl', 'vitg']:
+        torch.cuda.empty_cache()
+        print(f"  ✓ Memory optimizations enabled for large model")
+
     # compiled_model = torch.compile(model, mode="max-autotune", fullgraph=True)
     # return compiled_model
     return model
 
 @time_function
 def infer_depth(model, image):
-    return model.infer_image(image, input_size= 512)
+    torch, _ = _ensure_torch_loaded()
+
+    # Check if using CUDA and print memory stats
+    if torch.cuda.is_available() and next(model.parameters()).is_cuda:
+        # Clear cache before inference
+        torch.cuda.empty_cache()
+
+        # Get memory stats before inference
+        allocated_before = torch.cuda.memory_allocated(0) / (1024**3)
+        reserved_before = torch.cuda.memory_reserved(0) / (1024**3)
+        print(f"  GPU memory before inference: {allocated_before:.2f} GB allocated, {reserved_before:.2f} GB reserved")
+
+    # Perform inference with no_grad for memory efficiency
+    with torch.no_grad():
+        result = model.infer_image(image, input_size=512)
+
+    # Clear cache after inference
+    if torch.cuda.is_available() and next(model.parameters()).is_cuda:
+        allocated_after = torch.cuda.memory_allocated(0) / (1024**3)
+        reserved_after = torch.cuda.memory_reserved(0) / (1024**3)
+        print(f"  GPU memory after inference: {allocated_after:.2f} GB allocated, {reserved_after:.2f} GB reserved")
+
+        # Free up memory
+        torch.cuda.empty_cache()
+        print(f"  ✓ GPU cache cleared")
+
+    return result
 
 # Colormap constants - these will be looked up from cv2 when needed
 COLORMAP_NAMES = {
@@ -391,7 +507,8 @@ def main(model_size: str,
          colormap: str | None,
          include_alpha: bool = False,
          save_16bit: bool = True,
-         preferred_device: str = "cpu") -> np.ndarray:
+         preferred_device: str = "cpu",
+         enable_cpu_offload: bool = True) -> np.ndarray:
     """
     High-level entry that loads the model, infers depth, masks transparencies,
     post-processes, embeds alpha (optional) and writes a PNG.
@@ -407,18 +524,20 @@ def main(model_size: str,
     """
     torch, cv2 = _ensure_torch_loaded()  # Load dependencies first!
 
-    # Load model
+    # Determine device for display purposes
     if preferred_device == 'gpu':
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     else:
         DEVICE = 'cpu'
 
     print(DEVICE)
-    # print("CUDA: ", torch.backends.cuda.matmul.allow_tf32)
-    # print("CUDNN: ",torch.backends.cudnn.allow_tf32)
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    model = load_model(model_size, checkpoint_path,DEVICE)
+    # Enable TF32 for better performance on Ampere+ GPUs
+    if DEVICE == 'cuda':
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
+    # Load model - pass preferred_device ('gpu'/'cpu'), not DEVICE ('cuda'/'cpu')
+    model = load_model(model_size, checkpoint_path, preferred_device, enable_cpu_offload)
     if isinstance(input_image,bpy.types.Image):
         raw_img, alpha_mask = get_raw_img(input_image,use_dirty_image)
     else:

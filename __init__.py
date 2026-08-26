@@ -135,6 +135,7 @@ class DepthGeniusProperties(bpy.types.PropertyGroup):
             ('vits', "ViT-S : Small", "Small model (commercial use allowed)"),
             ('vitb', "ViT-B : Base", "Base model (non-commercial use only)"),
             ('vitl', "ViT-L : Large", "Large model (non-commercial use only)"),
+            ('vitg', "ViT-G : Giant", "Giant model - Best quality (non-commercial use only)"),
         ],
         default='vits',
         update=check_model_availability
@@ -247,6 +248,12 @@ class DepthGeniusProperties(bpy.types.PropertyGroup):
         default=DEFAULT_SETTINGS['device']
     )
 
+    enable_cpu_offload: bpy.props.BoolProperty(
+        name="Enable CPU Offloading",
+        description="Automatically offload model to CPU if GPU memory is insufficient. Slower but prevents OOM errors. Recommended for GPUs with <8GB VRAM when using Large/Giant models",
+        default=True
+    )
+
     mode: bpy.props.EnumProperty(
         items=[
             ('IMAGE', 'Single Image', 'Depth Image generated from a single image'),
@@ -298,6 +305,7 @@ classes = (
     operators.DEPTHGENIUS_OT_open_image_in_new_window,
     image_plane.DEPTHGENIUS_OT_CreatePlane,
     operators.DEPTHGENIUS_OT_open_checkpoint_folder,
+    operators.DEPTHGENIUS_OT_ClearModelCache,
     ui.DEPTHGENIUS_PT_HoverInfo,
     ui.DEPTHGENIUS_PT_Panel,
     ui.DEPTHGENIUS_PT_Modifiers,
